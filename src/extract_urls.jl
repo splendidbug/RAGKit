@@ -124,16 +124,16 @@ function get_urls!(url::AbstractString, url_queue::Vector{<:AbstractString})
 
     @info "Scraping link: $url"
     # println(url)
-    try
-        fetched_content = HTTP.get(url)
-        parsed = Gumbo.parsehtml(String(fetched_content.body))
-        if (url[end-3:end] == ".xml")
-            find_urls_xml!(url_xml, url_queue)
-        else
-            find_urls_html!(url, parsed.root, url_queue)
-        end
-        # print("-------------")
-    catch e
-        println("Bad URL: $url")
+    # try
+    fetched_content = HTTP.get(url)
+    parsed = Gumbo.parsehtml(String(fetched_content.body))
+    if (url[end-3:end] == ".xml")
+        find_urls_xml!(url_xml, url_queue)
+    else
+        find_urls_html!(url, parsed.root, url_queue)
     end
+    # print("-------------")
+    # catch e
+    #     println("Bad URL: $url")
+    # end
 end

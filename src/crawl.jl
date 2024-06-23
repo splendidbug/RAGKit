@@ -1,10 +1,16 @@
-include("parser.jl")
+## TODO: Make multiple dispatch for the following function to remove if-else
+"""
+    parse_robots_txt!(robots_txt::String)
 
-## TODO: Make multiple dispatch for the following function
-function parse_robots_txt!(robots_txt::String, url_queue::Vector{<:AbstractString})
-    ## TODO: Make a cache of rules for a quick lookup
+Parses the robots.txt string and returns rules along with the URLs on Sitemap
+
+# Arguments
+- `robots_txt`: robots.txt as a string
+"""
+function parse_robots_txt!(robots_txt::String)
     rules = Dict{String,Dict{String,Vector{String}}}()
     current_user_agent = ""
+    sitemap_urls = Vector{AbstractString}()
 
     for line in split(robots_txt, '\n')
         line = strip(line)
@@ -25,35 +31,46 @@ function parse_robots_txt!(robots_txt::String, url_queue::Vector{<:AbstractStrin
             end
         elseif startswith(line, "Sitemap:")
             url = strip(split(line, ":")[2])
-            push!(url_queue, url)
+            push!(sitemap_urls, url)
         end
 
     end
-    return rules
+    return rules, sitemap_urls
 end
 
 
+"""
+    check_robots_txt(user_agent::AbstractString,
+        url::AbstractString)
+
+Checks the robots.txt of a URL and returns a boolean representing if `user_agent` is allowed to crawl the input url
+
+# Arguments
+- `user_agent`: user agent attempting to crawl the webpage
+- `url`: input URL string
+"""
 function check_robots_txt(user_agent::AbstractString,
-    url::AbstractString,
-    restricted_urls::Dict{String,Set{AbstractString}},
-    url_queue::Vector{<:AbstractString})
+    url::AbstractString)
+
+    ## TODO: Make a cache of rules for a quick lookup
+    # if (haskey(restricted_urls, url))
+    #     if (in(path, restricted_urls[url]))
+    #         println("Not allowed to crawl $url")
+    #         return false
+    #     else
+    #         return true
+    #     end
+    # end
 
     URI = URIs.URI(url)
     path = URI.path
-    if (haskey(restricted_urls, url))
-        if (in(path, restricted_urls[url]))
-            println("Not allowed to crawl $url")
-            return false
-        else
-            return true
-        end
-    end
 
     robots_URL = string(URI.scheme, "://", URI.host, "/robots.txt")
+    sitemap_urls = Vector{AbstractString}()
     try
         response = HTTP.get(robots_URL)
         robots_txt = String(response.body)
-        rules = parse_robots_txt!(robots_txt, url_queue)
+        rules, sitemap_urls = parse_robots_txt!(robots_txt)
         user_agents = [user_agent, "*"]
         for ua in user_agents
             if haskey(rules, ua)
@@ -62,25 +79,24 @@ function check_robots_txt(user_agent::AbstractString,
 
                 for allow_rule in allow_rules
                     if startswith(path, allow_rule)
-                        return true
+                        return true, sitemap_urls
                     end
                 end
 
                 for disallow_rule in disallow_rules
                     if startswith(path, disallow_rule)
-                        println("Not allowed to crawl $url")
-                        return false
+                        @warn "Not allowed to crawl $url"
+                        return false, sitemap_urls
                     end
                 end
             end
         end
-        return true
+        return true, sitemap_urls
     catch
-        println("robots.txt unavailable for $url")
-        return true
+        @info "robots.txt unavailable for $url"
+        return true, sitemap_urls
     end
 end
-
 
 """
     get_base_url(url::AbstractString)
@@ -100,35 +116,77 @@ end
 
 
 """
-    makeRAG(input_urls::Vector{<:AbstractString})
+    process_hostname(url::AbstractString)
 
-Extracts the base url.
+Returns the hostname of an input URL
 
 # Arguments
-- `input_urls`: vector containing URL strings to parse
+- `url`: URL string
 """
-function makeRAG(input_urls::Vector{<:AbstractString})
+function process_hostname(url::AbstractString)
+    URI = URIs.URI(url)
+    hostname = String(URI.host)
+    return hostname
+end
+
+
+"""
+    process_hostname(url::AbstractString, hostname_dict::Dict{AbstractString,Vector{AbstractString}})
+
+Adds the `url` to it's hostname in `hostname_dict`
+
+# Arguments
+- `url`: URL string
+- `hostname_dict`: Dict with key being hostname and value being a vector of URLs
+"""
+function process_hostname!(url::AbstractString, hostname_dict::Dict{AbstractString,Vector{AbstractString}})
+    hostname = process_hostname(url)
+
+    # Add the URL to the dictionary under its hostname
+    if haskey(hostname_dict, hostname)
+        push!(hostname_dict[hostname], url)
+    else
+        hostname_dict[hostname] = [url]
+    end
+end
+
+
+"""
+    crawl(input_urls::Vector{<:AbstractString})
+
+Crawls on the input URLs and returns a `hostname_url_dict` which is a dictionary with key being hostnames and the values being the URLs
+
+# Arguments
+- `input_urls`: A vector of input URLs
+"""
+function crawl(input_urls::Vector{<:AbstractString})
 
     url_queue = Vector{AbstractString}(input_urls)
     visited_url_set = Set{AbstractString}()
-    restricted_urls = Dict{String,Set{AbstractString}}()
-    parsed_blocks = []
-    ## TODO: Add parallel processing for URLs
+    hostname_url_dict = Dict{AbstractString,Vector{AbstractString}}()
+    sitemap_urls = Vector{AbstractString}()
 
+    # TODO: Add parallel processing for URLs
     while !isempty(url_queue)
         url = url_queue[1]
         popfirst!(url_queue)
         base_url = get_base_url(url)
 
-        ## TODO: Show some respect to robots.txt
         if !in(base_url, visited_url_set)
             push!(visited_url_set, base_url)
-            if !check_robots_txt("*", base_url, restricted_urls, url_queue)
-                break
+            crawlable, sitemap_urls = check_robots_txt("*", base_url)
+            append!(url_queue, sitemap_urls)
+            if crawlable
+                try
+                    get_urls!(base_url, url_queue)
+                    process_hostname!(url, hostname_url_dict)
+                catch
+                    @error "Bad URL: $base_url"
+                end
             end
-            get_urls!(base_url, url_queue)
-            push!(parsed_blocks, parse_url_to_blocks(base_url))
         end
     end
-    return parsed_blocks
+
+    return hostname_url_dict
+
 end
