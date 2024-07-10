@@ -66,6 +66,16 @@ function make_chunks(hostname_url_dict::Dict{AbstractString,Vector{AbstractStrin
 
 end
 
+function l2_norm_columns(mat::AbstractMatrix)
+    norm_ = norm.(eachcol(mat))
+    return mat ./ norm_'
+end
+function l2_norm_columns(vect::AbstractVector)
+    norm_ = norm(vect)
+    return vect / norm_
+end
+
+
 """
     generate_embeddings()
 
@@ -120,19 +130,19 @@ function generate_embeddings(knowledge_pack_path::String)
                 chunks = deserialize(chunks_file)
                 sources = deserialize(sources_file)
                 cost_tracker = Threads.Atomic{Float64}(0.0)
-                full_embeddings = RT.get_embeddings(embedder, chunks; model="text-embedding-3-large", verbose=false, cost_tracker, api_key=ENV["OPENAI_API_KEY"])
+                full_embeddings = RT.get_embeddings(embedder, chunks; model="text-embedding-3-large", verbose=false, cost_tracker, dimensions=1024)
 
-                # Float32
                 fn_output = joinpath(knowledge_pack_path, "packs", "$hostname-textembedding3large-0-Float32__v1.0.tar.gz")
                 fn_temp = joinpath(knowledge_pack_path, "packs", "pack.hdf5")
                 h5open(fn_temp, "w") do file
                     file["chunks"] = chunks
                     file["sources"] = sources
-                    file["embeddings"] = full_embeddings
+                    file["embeddings"] = full_embeddings[1:1024, :] |> l2_norm_columns |> x -> map(>(0), x)
                     file["type"] = "ChunkIndex"
                     # file["metadata"] = "$hostname ecosystem docstrings, chunk size $chunk_size, downloaded on 20240330, contains: Makie.jl, AlgebraOfGraphics.jl, GeoMakie.jl, GraphMakie.jl, MakieThemes.jl, TopoPlots.jl, Tyler.jl"
                 end
-                run(tar - cvzf$fn_output - C$(dirname(fn_temp))$(basename(fn_temp)))
+                command = `tar -cvzf $fn_output -C $(dirname(fn_temp)) $(basename(fn_temp))`
+                run(command)
                 report_artifact(fn_output)
 
             else

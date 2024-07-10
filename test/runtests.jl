@@ -1,21 +1,37 @@
 
 using Test
+using HTTP, Gumbo, AbstractTrees, URIs
+using Gumbo: HTMLDocument, HTMLElement
+using EzXML
+using PromptingTools
+const PT = PromptingTools
+const RT = PromptingTools.Experimental.RAGTools
+using LinearAlgebra, Unicode, SparseArrays
+using HDF5
+using Tar
+using Inflate
+
+using SHA
+using Serialization, URIs
+
+include("..\\src\\crawl.jl")
+include("..\\src\\extract_urls.jl")
+include("..\\src\\parser.jl")
+include("..\\src\\preparation.jl")
 urls = Vector{AbstractString}(["https://docs.julialang.org/en/v1/"])
 url = urls[1]
 queue = Vector{AbstractString}()
 
 @testset "check robots.txt" begin
+    @test HTTP.get(url) != nothing
+
     result, sitemap_queue = check_robots_txt("*", url)
     @test result == true
 end
 
-@testset "HTTP get" begin
-    @test HTTP.get(url) != nothing
-end
-
-@testset "get_urls!" begin
-    get_urls!(url, queue)
-    @test length(queue) > 1
+@testset "crawl" begin
+    hostname_url_dict = crawl(urls)
+    @test length(hostname_url_dict) > 0
 end
 
 @testset "parse & roll_up" begin

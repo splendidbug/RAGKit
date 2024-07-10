@@ -1,8 +1,3 @@
-name = "RAGKit"
-uuid = "74e640d8-05f4-4b4f-8742-56fc934b3f17"
-authors = ["Shreyas Agrawal <48771895+splendidbug@users.noreply.github.com>"]
-version = "0.1.0"
-
 [deps]
 AbstractTrees = "1520ce14-60c1-5f80-bbc7-55ef81b5835c"
 DotEnv = "4dc1fcf4-5e3b-5448-94ab-0c38ec0385c1"
